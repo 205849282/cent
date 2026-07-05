@@ -1,0 +1,261 @@
+import { useShallow } from "zustand/shallow";
+import { DEFAULT_VOICE_PROMPT_TEMPLATE } from "@/components/assistant/text-to-bill";
+import PopupLayout from "@/layouts/popup-layout";
+import { useIntl } from "@/locale";
+import { useLedgerStore } from "@/store/ledger";
+import { usePreference } from "@/store/preference";
+import { useUserStore } from "@/store/user";
+import { isSpeechRecognitionSupported } from "../add-button/recognize";
+import createConfirmProvider from "../confirm";
+import { Button } from "../ui/button";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "../ui/select";
+import { Switch } from "../ui/switch";
+
+const FOLLOW_DEFAULT = "__default__";
+
+function Form({ onCancel }: { onCancel?: () => void }) {
+    const t = useIntl();
+    const { id: userId } = useUserStore();
+
+    // 获取AI配置信息
+    const { configs = [], defaultConfigId } = useLedgerStore(
+        useShallow((state) => {
+            const assistantData =
+                state.infos?.meta.personal?.[userId]?.assistant;
+            return {
+                configs: assistantData?.configs,
+                defaultConfigId: assistantData?.defaultConfigId,
+            };
+        }),
+    );
+
+    // 判断是否有可用的AI配置
+    const hasAIConfig = configs.length > 0 && defaultConfigId;
+
+    // 语音记账开关状态
+    const [voiceEnabled, setVoiceEnabled] = usePreference(
+        "voiceRecordingEnabled",
+    );
+
+    const [voiceByKeyboard, setVoiceByKeyboard] =
+        usePreference("voiceByKeyboard");
+
+    const [voiceAIConfigId, setVoiceAIConfigId] =
+        usePreference("voiceAIConfigId");
+
+    const [voicePromptTemplate, setVoicePromptTemplate] = usePreference(
+        "voicePromptTemplate",
+    );
+
+    const defaultConfigName = configs.find(
+        (c) => c.id === defaultConfigId,
+    )?.name;
+    const selectedConfigExists =
+        voiceAIConfigId && configs.some((c) => c.id === voiceAIConfigId);
+    const selectValue = selectedConfigExists
+        ? (voiceAIConfigId as string)
+        : FOLLOW_DEFAULT;
+
+    return (
+        <PopupLayout
+            title={t("voice-recording-settings")}
+            onBack={onCancel}
+            className="h-full overflow-hidden"
+        >
+            <div className="flex-1 flex flex-col overflow-y-auto py-4">
+                {/* 语音记账开关 */}
+                <div className="w-full min-h-10 pb-4 flex-shrink-0 flex justify-between items-center px-4 gap-2">
+                    <div className="text-sm">
+                        <div>{t("enable-voice-recording")}</div>
+                        <div className="text-xs opacity-60">
+                            {hasAIConfig
+                                ? voiceEnabled
+                                    ? t("voice-recording-tip")
+                                    : t("voice-recording-description")
+                                : t("voice-recording-requires-ai-config")}
+                        </div>
+                    </div>
+                    <Switch
+                        checked={Boolean(voiceEnabled && hasAIConfig)}
+                        onCheckedChange={(checked) => {
+                            if (hasAIConfig) {
+                                setVoiceEnabled(checked);
+                                if (checked) {
+                                    const isSupported =
+                                        isSpeechRecognitionSupported();
+                                    if (!isSupported) {
+                                        setVoiceByKeyboard(true);
+                                    }
+                                }
+                            }
+                        }}
+                        disabled={!hasAIConfig}
+                    />
+                </div>
+
+                {/* 提示信息 */}
+                {!hasAIConfig && (
+                    <div className="px-4 py-2">
+                        <div className="text-xs p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                            <div className="flex items-start gap-2">
+                                <i className="icon-[mdi--information-outline] size-4 flex-shrink-0 mt-0.5"></i>
+                                <div>{t("voice-recording-setup-tip")}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {voiceEnabled && (
+                    <div className="w-full min-h-10 pb-4 flex-shrink-0 flex justify-between items-center px-4 gap-2">
+                        <div className="text-sm">
+                            <div>
+                                {t("use-keyboard-input-instead-of-voice")}
+                            </div>
+                            <div className="text-xs opacity-60">
+                                {t("use-keyboard-input-description")}
+                            </div>
+                        </div>
+                        <Switch
+                            checked={Boolean(voiceByKeyboard)}
+                            onCheckedChange={(checked) => {
+                                setVoiceByKeyboard(checked);
+                            }}
+                        />
+                    </div>
+                )}
+                {voiceEnabled && hasAIConfig && (
+                    <div className="w-full min-h-10 pb-4 flex-shrink-0 flex justify-between items-center px-4 gap-2">
+                        <div className="text-sm min-w-0 flex-1">
+                            <div>{t("voice-ai-model")}</div>
+                            <div className="text-xs opacity-60">
+                                {t("voice-ai-model-description")}
+                            </div>
+                        </div>
+                        <Select
+                            value={selectValue}
+                            onValueChange={(value) => {
+                                setVoiceAIConfigId(
+                                    value === FOLLOW_DEFAULT
+                                        ? undefined
+                                        : value,
+                                );
+                            }}
+                        >
+                            <SelectTrigger className="w-40">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={FOLLOW_DEFAULT}>
+                                    {t("follow-assistant-default")}
+                                    {defaultConfigName
+                                        ? ` (${defaultConfigName})`
+                                        : ""}
+                                </SelectItem>
+                                {configs.map((config) => (
+                                    <SelectItem
+                                        key={config.id}
+                                        value={config.id}
+                                    >
+                                        {config.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+                {voiceEnabled && hasAIConfig && (
+                    <div className="w-full px-4 pb-2 flex flex-col gap-2">
+                        <div className="flex justify-between items-start gap-2">
+                            <div className="text-sm min-w-0 flex-1">
+                                <div>{t("voice-custom-prompt")}</div>
+                                <div className="text-xs opacity-60">
+                                    {t("voice-custom-prompt-description")}
+                                </div>
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setVoicePromptTemplate(undefined);
+                                }}
+                            >
+                                {t("voice-custom-prompt-reset")}
+                            </Button>
+                        </div>
+                        <textarea
+                            className="w-full min-h-60 border rounded-lg p-2 text-xs font-mono"
+                            value={
+                                voicePromptTemplate ??
+                                DEFAULT_VOICE_PROMPT_TEMPLATE
+                            }
+                            onChange={(e) => {
+                                setVoicePromptTemplate(e.currentTarget.value);
+                            }}
+                        />
+                        <div className="text-xs opacity-60 flex flex-col gap-1">
+                            <div>{t("voice-prompt-variables-title")}</div>
+                            <ul className="list-disc pl-4 space-y-0.5">
+                                <li>
+                                    <code>{"{{categories}}"}</code> —{" "}
+                                    {t("voice-prompt-var-categories")}
+                                </li>
+                                <li>
+                                    <code>{"{{tags}}"}</code> —{" "}
+                                    {t("voice-prompt-var-tags")}
+                                </li>
+                                <li>
+                                    <code>{"{{tagGroups}}"}</code> —{" "}
+                                    {t("voice-prompt-var-tag-groups")}
+                                </li>
+                                <li>
+                                    <code>{"{{currentTime}}"}</code> —{" "}
+                                    {t("voice-prompt-var-current-time")}
+                                </li>
+                                <li>
+                                    <code>{"{{locale}}"}</code> —{" "}
+                                    {t("voice-prompt-var-locale")}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </PopupLayout>
+    );
+}
+
+const [VoiceSettingsProvider, showVoiceSettings] = createConfirmProvider(Form, {
+    dialogTitle: "voice-recording-settings",
+    dialogModalClose: false,
+    contentClassName:
+        "h-full w-full max-h-full max-w-full rounded-none sm:rounded-md sm:max-h-[min(520px,calc(100vh-32px))] sm:w-[90vw] sm:max-w-[500px]",
+});
+
+export default function VoiceSettingsItem() {
+    const t = useIntl();
+    return (
+        <div className="voice-settings">
+            <Button
+                onClick={() => {
+                    showVoiceSettings();
+                }}
+                variant="ghost"
+                className="w-full py-4 rounded-none h-auto"
+            >
+                <div className="w-full px-4 flex justify-between items-center">
+                    <div className={`flex items-center gap-2`}>
+                        <i className="icon-[mdi--microphone-outline] size-5"></i>
+                        {t("voice-recording-settings")}
+                    </div>
+                    <i className="icon-[mdi--chevron-right] size-5"></i>
+                </div>
+            </Button>
+            <VoiceSettingsProvider />
+        </div>
+    );
+}
